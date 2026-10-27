@@ -1,0 +1,20 @@
+{
+  "name": "notifier-cloud",
+  "version": "2.0.0",
+  "description": "Notificador WhatsApp + Telegram (Baileys) para rodar em nuvem — sessão e fila no Postgres",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js serve",
+    "serve": "node server.js serve",
+    "teste": "node server.js test"
+  },
+  "dependencies": {
+    "baileys": "^6.17.16",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.4",
+    "pg": "^8.13.1"
+  }
+}

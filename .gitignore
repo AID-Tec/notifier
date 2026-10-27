@@ -1,0 +1,16 @@
+# dependencias e artefatos locais
+node_modules/
+logs/
+*.log
+
+# sessao do WhatsApp e configuracao com segredos NUNCA vao pro Git
+wa-session/
+config.json
+config.example.json
+wa-qr.png
+
+# sistema
+.DS_Store
+Thumbs.db
+.env
+.env.*
