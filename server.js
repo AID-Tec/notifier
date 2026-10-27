@@ -146,6 +146,33 @@ async function dbGet(chave) {
   return r.rows.length ? r.rows[0].valor : null;
 }
 
+async function dbGetVarios(chaves) {
+  if (!pg.pronto || !chaves.length) return [];
+  const r = await pg.pool.query(
+    "SELECT chave, valor FROM notifier_auth WHERE chave = ANY($1::text[])",
+    [chaves]
+  );
+  return r.rows;
+}
+
+async function dbSetVarios(pares) {
+  if (!pg.pronto || !pares.length) return;
+  const chaves = pares.map((p) => p[0]);
+  const valores = pares.map((p) => p[1]);
+  await pg.pool.query(
+    `INSERT INTO notifier_auth (chave, valor, atualizado_em)
+     SELECT u.chave, u.valor, now()
+     FROM UNNEST($1::text[], $2::text[]) AS u(chave, valor)
+     ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor, atualizado_em=now()`,
+    [chaves, valores]
+  );
+}
+
+async function dbDelVarios(chaves) {
+  if (!pg.pronto || !chaves.length) return;
+  await pg.pool.query("DELETE FROM notifier_auth WHERE chave = ANY($1::text[])", [chaves]);
+}
+
 async function dbSet(chave, valor) {
   if (!pg.pronto) return;
   await pg.pool.query(
@@ -270,22 +297,30 @@ async function waAuthState(B) {
     get: async (tipo, ids) => {
       const out = {};
       if (!ids || ids.length === 0) return out;
+      const chaves = ids.map((id) => `k:${tipo}:${id}`);
+      const linhas = await dbGetVarios(chaves);
+      const mapa = new Map(linhas.map((l) => [l.chave, l.valor]));
       for (const id of ids) {
-        const v = await dbGet(`k:${tipo}:${id}`);
+        const v = mapa.get(`k:${tipo}:${id}`);
         if (v != null) out[id] = desserializar(v);
       }
       return out;
     },
     set: async (data) => {
+      const inserir = [];
+      const apagar = [];
       for (const tipo of Object.keys(data || {})) {
         for (const id of Object.keys(data[tipo] || {})) {
           const valor = data[tipo][id];
           const chave = `k:${tipo}:${id}`;
-          if (valor == null) await dbDel(chave);
-          else await dbSet(chave, serializar(valor));
+          if (valor == null) apagar.push(chave);
+          else inserir.push([chave, serializar(valor)]);
         }
       }
+      if (apagar.length) await dbDelVarios(apagar);
+      if (inserir.length) await dbSetVarios(inserir);
     },
+    transaction: async (fn) => { await fn(); },
   };
 
   const saveCreds = async () => {
@@ -319,7 +354,7 @@ async function waIniciar(cfg) {
       auth: state,
       version: versao.length ? versao : undefined,
       printQRInTerminal: false,
-      logger: { level: "silent", child() { return this; }, trace(){}, debug(){}, info(){}, warn(){}, error(){}, fatal(){} },
+      logger: (await import("pino")).default({ level: "silent" }),
       browser: ["NOTIFIER Cloud", "Chrome", "1.2.0"],
       markOnlineOnConnect: false,
       syncFullHistory: false,
