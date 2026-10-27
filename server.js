@@ -388,7 +388,10 @@ async function waIniciar(cfg) {
         wa.sock = null;
         if (saiu) {
           wa.estado = "desconectado (precisa parear de novo)";
-          registrarLog("WhatsApp deslogado. Use /wa/qr para parear novamente.");
+          registrarLog("WhatsApp deslogado. Use /wa para parear novamente.");
+          /* sessao invalida: limpa credenciais para o proximo pareamento nascer limpo */
+          try { if (pg.pronto) await pg.pool.query("DELETE FROM notifier_auth"); } catch { /* ok */ }
+          try { fs.rmSync(path.join(RAIZ, cfg.whatsapp.sessionDir), { recursive: true, force: true }); } catch { /* ok */ }
         } else {
           wa.estado = "reconectando...";
           if (!wa.reconectando) {
@@ -482,6 +485,23 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
+let reiniciando = false;
+async function garantirSocket(cfg) {
+  if (wa.sock || wa.estado === "conectado") return;
+  if (reiniciando) return;
+  reiniciando = true;
+  try {
+    await waIniciar(cfg);
+    /* espera o handshake gerar o QR (ou conectar) */
+    const limite = Date.now() + 15000;
+    while (!wa.qr && wa.estado !== "conectado" && Date.now() < limite) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  } finally {
+    setTimeout(() => { reiniciando = false; }, 20000);
+  }
+}
+
 function autorizado(req, cfg) {
   if (!cfg.chave) return true; // sem chave configurada: aberto (nao recomendado)
   const h = req.headers["x-notifier-key"] || "";
@@ -544,6 +564,7 @@ function iniciarServidor(cfg) {
 
     /* pagina amigavel para parear: abre no navegador e mostra o QR sempre atual */
     if (req.method === "GET" && (rota === "/wa" || rota === "/wa/")) {
+      if (wa.estado !== "conectado") { try { await garantirSocket(cfg); } catch { /* ok */ } }
       const k = url.searchParams.get("key") || "";
       const conectado = wa.estado === "conectado";
       const corpo = conectado
@@ -564,6 +585,7 @@ function iniciarServidor(cfg) {
     }
 
     if (req.method === "GET" && rota === "/wa/qr") {
+      if (wa.estado !== "conectado") { try { await garantirSocket(cfg); } catch { /* ok */ } }
       if (wa.estado === "conectado") return json(res, 200, { estado: wa.estado });
       if (!wa.qr) return json(res, 404, { estado: wa.estado, erro: "QR ainda nao gerado, tente em alguns segundos" });
       return json(res, 200, { estado: wa.estado, qr: wa.qr });
@@ -574,6 +596,7 @@ function iniciarServidor(cfg) {
         const p = JSON.parse((await lerCorpo(req)) || "{}");
         const numero = String(p.numero || cfg.whatsapp.target || "").replace(/[^0-9]/g, "");
         if (numero.length < 10) return json(res, 400, { erro: "informe numero com DDI+DDD" });
+        await garantirSocket(cfg);
         if (!wa.sock) return json(res, 503, { erro: "socket nao iniciado", estado: wa.estado });
         const codigo = await wa.sock.requestPairingCode(numero);
         wa.parCode = codigo;
