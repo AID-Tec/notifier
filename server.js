@@ -542,6 +542,27 @@ function iniciarServidor(cfg) {
       }
     }
 
+    /* pagina amigavel para parear: abre no navegador e mostra o QR sempre atual */
+    if (req.method === "GET" && (rota === "/wa" || rota === "/wa/")) {
+      const k = url.searchParams.get("key") || "";
+      const conectado = wa.estado === "conectado";
+      const corpo = conectado
+        ? `<h1>✅ WhatsApp conectado</h1><p>Destino: ${cfg.whatsapp.target || "-"}</p>`
+        : wa.qr
+          ? `<h1>Parear WhatsApp</h1>
+             <p>Abra no celular: <b>WhatsApp → Aparelhos conectados → Conectar aparelho</b> e escaneie:</p>
+             <img src="${wa.qr}" alt="QR de pareamento" style="width:320px;height:320px;image-rendering:pixelated;border:8px solid #111;border-radius:8px">
+             <p style="color:#666">O código acima se renova sozinho a cada poucos segundos.</p>`
+          : `<h1>Gerando QR...</h1><p>Estado: ${wa.estado}</p>`;
+      const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+        <meta http-equiv="refresh" content="5;url=/wa?key=${encodeURIComponent(k)}">
+        <title>NOTIFIER — pareamento</title>
+        <style>body{font-family:system-ui,Segoe UI,Arial;background:#0f172a;color:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}h1{font-size:22px}</style>
+        </head><body>${corpo}<p style="color:#64748b;font-size:12px">Atualiza sozinho a cada 5s • estado: ${wa.estado}</p></body></html>`;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(html);
+    }
+
     if (req.method === "GET" && rota === "/wa/qr") {
       if (wa.estado === "conectado") return json(res, 200, { estado: wa.estado });
       if (!wa.qr) return json(res, 404, { estado: wa.estado, erro: "QR ainda nao gerado, tente em alguns segundos" });
